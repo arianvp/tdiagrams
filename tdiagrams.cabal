@@ -12,12 +12,18 @@ maintainer:            Stefan Holdermans <stefan@cs.uu.nl>
 stability:             provisional
 homepage:              http://www.cs.uu.nl/wiki/Cco/MiniProjects
 tested-with:           GHC == 6.8.2, GHC == 6.8.3, GHC == 6.10.1
-build-type:            Simple
+build-type:            Custom
 cabal-version:         >= 1.8
-extra-source-files:    AUTHORS, Makefile, src/CCO/Diag/AG.ag,
+extra-source-files:    AUTHORS, src/CCO/Diag/AG.ag,
                        src/CCO/Diag/AG/Base.ag, src/CCO/Picture/AG.ag,
-                       src/CCO/Picture/AG/Base.ag, 
+                       src/CCO/Picture/AG/Base.ag,
                        src/CCO/Picture/AG/Printing.ag
+
+custom-setup
+  setup-depends:       base >=4.9 && <5
+                     , uuagc >=0.9 && <1
+                     , uuagc-cabal >= 1.0.6.0 && <2
+                     , Cabal >=1.10 && <2
 
 executable parse-tdiag
   main-is:             ParseTDiag.hs
@@ -25,9 +31,15 @@ executable parse-tdiag
   other-modules:       CCO.Diag, CCO.Diag.AG, CCO.Diag.Base, CCO.Diag.Lexer,
                        CCO.Diag.Parser
   hs-source-dirs:      src
+  x-agmodule:
+    file: "src/CCO/Diag/AG.ag"
+    options: haskellsyntax, data, catas, semfuns, wrappers, signatures
 
 executable pp-picture
   main-is:             PpPicture.hs
   build-depends:       base, uu-cco >= 0.1.0.1
   other-modules:       CCO.Picture, CCO.Picture.AG
   hs-source-dirs:      src
+  x-agmodule:
+    file: "src/CCO/Picture/AG.ag"
+    options: haskellsyntax, data, catas, semfuns, wrappers, signatures
