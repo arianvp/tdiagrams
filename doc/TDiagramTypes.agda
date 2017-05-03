@@ -2,10 +2,6 @@ module TDiagramTypes where
 
 data ∃ (A : Set) (B : A -> Set) : Set where
     _,_ : (a : A) -> (b : B a) -> ∃ A B
-fst : ∀ {A B} -> ∃ A B -> A
-fst (a , b) = a
-snd : ∀ {A B} -> (p : ∃ A B) -> B (fst p)
-snd (a , b) = b
 
 choice : {A C : Set} {B : A -> Set} -> ((a : A) -> B a -> C) -> ∃ A B -> C
 choice f (a , b) = f a b
@@ -20,8 +16,6 @@ data T : Set where
     triv : T
 ¬_ : Set -> Set
 ¬_ x = x -> ⊥
-exfalso : {A : Set} -> ⊥ -> A
-exfalso()
 data _≡_ {X : Set} (x : X) : X -> Set where
     Refl : x ≡ x
 _≠_ : {X : Set} -> X -> X -> Set
@@ -63,11 +57,13 @@ data Provides : Set where
     ProY : (L : ℕ) -> Provides -- You can stack something that requires L on the top.
     ProC : (L : ℕ) -> (M : ℕ) -> Provides -- You can stack something that requires L on the side, and the result can stack M on the bottom.
 
+-- Each type has the form of a provides and a requires, which we write with =>.
 infix 20 _=>_
-
 data Type : Set where
     _=>_ : Requires -> Provides -> Type
 
+-- The whole system of type rules, in just 6 lines.
+-- Everything after this is going to be proving that it's sensible.
 infix 10 _::_
 data _::_ : Diagram -> Type -> Set where
     -- Type judgements for atomic diagrams.
@@ -79,17 +75,18 @@ data _::_ : Diagram -> Type -> Set where
     exec : ∀ {L M N D₁ D₂} -> D₁ :: ReqY L => M -> D₂ :: N => ProY L -> Execute D₁ D₂ :: N => M
     comp : ∀ {L M N O D₁ D₂} -> D₁ :: ReqY L => M -> D₂ :: N => ProC L O -> Compile D₁ D₂ :: ReqY O => M
 
-typeUnique : ∀ D {T₀ T₁} -> D :: T₀ -> D :: T₁ -> T₀ ≡ T₁
-typeUnique .(Program _) prog prog = Refl
-typeUnique .(Platform _) plat plat = Refl
-typeUnique .(Interpreter _ _) intr intr = Refl
-typeUnique .(Compiler _ _ _) cmpr cmpr = Refl
-typeUnique (Execute D₁ D₂) (exec x₀ x₁) (exec x₂ x₃) with typeUnique D₁ x₀ x₂ | typeUnique D₂ x₁ x₃
-typeUnique (Execute D₁ D₂) (exec x₀ x₁) (exec x₂ x₃) | Refl | Refl = Refl
-typeUnique (Compile D₁ D₂) (comp x₀ x₁) (comp x₂ x₃) with typeUnique D₁ x₀ x₂ | typeUnique D₂ x₁ x₃
-typeUnique (Compile D₁ D₂) (comp x₀ x₁) (comp x₂ x₃) | Refl | Refl = Refl
+-- A very important lemma: a term has exactly one type.
+typeUnique : ∀ {D T₀ T₁} -> D :: T₀ -> D :: T₁ -> T₀ ≡ T₁
+typeUnique .{Program _} prog prog = Refl
+typeUnique .{Platform _} plat plat = Refl
+typeUnique .{Interpreter _ _} intr intr = Refl
+typeUnique .{Compiler _ _ _} cmpr cmpr = Refl
+typeUnique {Execute D₁ D₂} (exec x₀ x₁) (exec x₂ x₃) with typeUnique x₀ x₂ | typeUnique x₁ x₃
+typeUnique {Execute D₁ D₂} (exec x₀ x₁) (exec x₂ x₃) | Refl | Refl = Refl
+typeUnique {Compile D₁ D₂} (comp x₀ x₁) (comp x₂ x₃) with typeUnique x₀ x₂ | typeUnique x₁ x₃
+typeUnique {Compile D₁ D₂} (comp x₀ x₁) (comp x₂ x₃) | Refl | Refl = Refl
 
--- Prove that this type system rejects nonsensical types
+-- Prove that this type system rejects the nonsensical types of the specification.
 nonsense : Diagram -> Set
 nonsense D = (T : Type) -> ¬(D :: T)
 
@@ -130,9 +127,9 @@ claim6c : ∀ K L M N O P -> L ≠ M -> nonsense (Compile (Compiler L O P) (Comp
 claim6c K L .L N O P x .(ReqY N => ProC O P) (comp cmpr cmpr) = x Refl
 
 -- Show that the type relation is decidable by giving a type checking function
-
--- Note that we could also just give TypeErr always, so we have typecheckComplete
--- on the other hand, soundness is expressed by the type of TypeOK
+-- We express the soundness using TypeOK: provide an explicit proof of typing,
+-- while completeness is guaranteed by TypeErr: provide a proof that the term
+-- has no type at all.
 data TypeChecked (D : Diagram) : Set where
     TypeOK : ∀ T -> D :: T -> TypeChecked D
     TypeErr : (∀ T -> ¬(D :: T)) -> TypeChecked D
@@ -151,59 +148,80 @@ splitCompRight {x₀ => x₁} (comp {L} {M} {N} {O} x₂ x₃) = (N => ProC L O)
 
 -- Executing a platform is nonsense
 execNeedsRequire : ∀ {D₀ D₁ T₀} -> D₀ :: ReqN => T₀ -> (T : Type) -> Execute D₀ D₁ :: T -> ⊥
-execNeedsRequire {D₀} x .(_ => _) (exec x' _) with typeUnique D₀ x x'
+execNeedsRequire x .(_ => _) (exec x' _) with typeUnique x x'
 ... | ()
 -- Executing on a program is nonsense
 execNeedsProvide : ∀ {D₀ D₁ T₀} -> D₁ :: T₀ => ProN -> (T : Type) -> Execute D₀ D₁ :: T -> ⊥
-execNeedsProvide {_} {D₁} x .(_ => _) (exec _ x') with typeUnique D₁ x x'
+execNeedsProvide x .(_ => _) (exec _ x') with typeUnique x x'
 ... | ()
 -- Executing on a compiler is nonsense
 execNeedsProvideY : ∀ {D₀ D₁ T₀ L M} -> D₁ :: T₀ => ProC L M -> (T : Type) -> Execute D₀ D₁ :: T -> ⊥
-execNeedsProvideY {_} {D₁} x .(_ => _) (exec _ x') with typeUnique D₁ x x'
+execNeedsProvideY x .(_ => _) (exec _ x') with typeUnique x x'
 ... | ()
 -- Executing on a nonmatching platform or interpreter is nonsense
 execCorresponding : ∀{D₀ D₁ T₀ T₁ L M} -> L ≠ M -> D₀ :: ReqY L => T₀ -> D₁ :: T₁ => ProY M -> (T : Type) → Execute D₀ D₁ :: T → ⊥
-execCorresponding {D₀} {D₁} p x₀ x₁ T (exec x₀' x₁') with typeUnique D₀ x₀ x₀' | typeUnique D₁ x₁ x₁'
+execCorresponding {D₁} p x₀ x₁ _ (exec x₀' x₁') with typeUnique x₀ x₀' | typeUnique x₁ x₁'
 ... | Refl | Refl = p Refl
 
 -- Compiling a platform is nonsense
 compileNeedsRequire : ∀ {D₀ D₁ T₀} -> D₀ :: ReqN => T₀ -> (T : Type) -> Compile D₀ D₁ :: T -> ⊥
-compileNeedsRequire {D₀} x .(_ => _) (comp x' _) with typeUnique D₀ x x'
+compileNeedsRequire x .(_ => _) (comp x' _) with typeUnique x x'
 ... | ()
 -- Compiling with a program is nonsense
 compileNeedsProvide : ∀ {D₀ D₁ T₀} -> D₁ :: T₀ => ProN -> (T : Type) -> Compile D₀ D₁ :: T -> ⊥
-compileNeedsProvide {_} {D₁} x .(_ => _) (comp _ x') with typeUnique D₁ x x'
+compileNeedsProvide x .(_ => _) (comp _ x') with typeUnique x x'
 ... | ()
 -- Compiling with a platform or interpreter is nonsense
 compileNeedsProvideC : ∀ {D₀ D₁ T₀ N} -> D₁ :: T₀ => ProY N -> (T : Type) -> Compile D₀ D₁ :: T -> ⊥
-compileNeedsProvideC {_} {D₁} x .(_ => _) (comp _ x') with typeUnique D₁ x x'
+compileNeedsProvideC x .(_ => _) (comp _ x') with typeUnique x x'
 ... | ()
 -- Compiling with an incompatible source language is nonsense
 compileCorresponding : ∀{D₀ D₁ T₀ T₁ L M N} -> L ≠ M -> D₀ :: ReqY L => T₀ -> D₁ :: T₁ => ProC M N -> (T : Type) → Compile D₀ D₁ :: T → ⊥
-compileCorresponding {D₀} {D₁} p x₀ x₁ T (comp x₀' x₁') with typeUnique D₀ x₀ x₀' | typeUnique D₁ x₁ x₁'
+compileCorresponding p x₀ x₁ _ (comp x₀' x₁') with typeUnique x₀ x₀' | typeUnique x₁ x₁'
 ... | Refl | Refl = p Refl
 
 -- The type checking function.
+-- For each diagram, proves that this diagram has a type, or can't have a type.
 typecheck : (D : Diagram) -> TypeChecked D
+-- Base case is easy, everything is ok.
 typecheck (Program L) = TypeOK (ReqY L => ProN) prog
 typecheck (Platform L) = TypeOK (ReqN => ProY L) plat
 typecheck (Interpreter L M) = TypeOK (ReqY L => ProY M) intr
 typecheck (Compiler L M N) = TypeOK (ReqY L => ProC M N) cmpr
+-- The recursive case: there are three possibilities:
+-- a subdiagram is ill-typed, so the whole diagram is ill-typed
+-- we encounter nonsense, so the diagram is ill-typed
+-- this part of the diagram is correctly typed!
 typecheck (Execute D₀ D₁) with typecheck D₀ | typecheck D₁
-typecheck (Execute D₀ D₁) | _ | TypeErr p = TypeErr (λ t x → choice p (splitExecRight x))
-typecheck (Execute D₀ D₁) | TypeErr p | _ = TypeErr (λ t x → choice p (splitExecLeft x))
-typecheck (Execute D₀ D₁) | TypeOK (ReqN => x₁) x₂ | (TypeOK (x₃ => x₄) x₅) = TypeErr (execNeedsRequire x₂)
-typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProN) x₅) = TypeErr (execNeedsProvide x₅)
+typecheck (Execute D₀ D₁) | _ | TypeErr p
+    = TypeErr (λ t x → choice p (splitExecRight x))
+typecheck (Execute D₀ D₁) | TypeErr p | _
+    = TypeErr (λ t x → choice p (splitExecLeft x))
+typecheck (Execute D₀ D₁) | TypeOK (ReqN => x₁) x₂ | (TypeOK (x₃ => x₄) x₅)
+    = TypeErr (execNeedsRequire x₂)
+typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProN) x₅)
+    = TypeErr (execNeedsProvide x₅)
 typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProY M) x₅) with L == M
-typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProY M) x₅) | (No p) = TypeErr (execCorresponding p x₂ x₅)
-typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProY .L) x₅) | (Yes Refl) = TypeOK (x₃ => x₁) (exec x₂ x₅)
-typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProC L₁ M) x₅) = TypeErr (execNeedsProvideY x₅)
+typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProY M) x₅) | (No p)
+    = TypeErr (execCorresponding p x₂ x₅)
+typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProY .L) x₅) | (Yes Refl)
+    = TypeOK (x₃ => x₁) (exec x₂ x₅)
+typecheck (Execute D₀ D₁) | TypeOK (ReqY L => x₁) x₂ | (TypeOK (x₃ => ProC L₁ M) x₅)
+    = TypeErr (execNeedsProvideY x₅)
+
 typecheck (Compile D₀ D₁) with typecheck D₀ | typecheck D₁
-typecheck (Compile D₀ D₁) | _ | TypeErr p = TypeErr (λ t x -> choice p (splitCompRight x))
-typecheck (Compile D₀ D₁) | TypeErr p | _ = TypeErr (λ t x -> choice p (splitCompLeft x))
-typecheck (Compile D₀ D₁) | TypeOK (ReqN => x₁) x₀ | (TypeOK (x₂ => x₃) x₄) = TypeErr (compileNeedsRequire x₀)
-typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProN) x₄) = TypeErr (compileNeedsProvide x₄)
-typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProY L₁) x₄) = TypeErr (compileNeedsProvideC x₄)
+typecheck (Compile D₀ D₁) | _ | TypeErr p
+    = TypeErr (λ t x -> choice p (splitCompRight x))
+typecheck (Compile D₀ D₁) | TypeErr p | _
+    = TypeErr (λ t x -> choice p (splitCompLeft x))
+typecheck (Compile D₀ D₁) | TypeOK (ReqN => x₁) x₀ | (TypeOK (x₂ => x₃) x₄)
+    = TypeErr (compileNeedsRequire x₀)
+typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProN) x₄)
+    = TypeErr (compileNeedsProvide x₄)
+typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProY L₁) x₄)
+    = TypeErr (compileNeedsProvideC x₄)
 typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProC M N) x₄) with L == M
-typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProC M N) x₄) | (No p) = TypeErr (compileCorresponding p x₀ x₄)
-typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProC .L N) x₄) | (Yes Refl) = TypeOK (ReqY N => x₁) (comp x₀ x₄)
+typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProC M N) x₄) | (No p)
+    = TypeErr (compileCorresponding p x₀ x₄)
+typecheck (Compile D₀ D₁) | TypeOK (ReqY L => x₁) x₀ | (TypeOK (x₂ => ProC .L N) x₄) | (Yes Refl)
+    = TypeOK (ReqY N => x₁) (comp x₀ x₄)
